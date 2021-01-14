@@ -4907,7 +4907,7 @@ static int loadtables(void)
         radarang[1279-i] = -radarang[i];
     }
 	calcbritable();
-
+#ifndef __MORPHOS__
     if (crc32once((unsigned char *)sintable, sizeof(sintable)) != 0xee1e7aba) {
         engineerrstr = "Calculation of sintable yielded unexpected results.";
         return 1;
@@ -4916,6 +4916,7 @@ static int loadtables(void)
         engineerrstr = "Calculation of radarang yielded unexpected results.";
         return 1;
     }
+#endif
 
 	return 0;
 }

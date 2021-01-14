@@ -318,7 +318,11 @@ int findfrompath(const char *fn, char **where)
 	pfn = (char *)malloc(allocsiz);
 	if (!pfn) { free(ffn); return -1; }
 
+	#ifdef __MORPHOS__
+	strcpy(pfn, "");
+	#else
 	strcpy(pfn, "./");
+	#endif
 	strcat(pfn, ffn);
 	if (access(pfn, F_OK) >= 0) {
 		*where = pfn;
@@ -892,7 +896,11 @@ CACHE1D_FIND_REC *klistpath(const char *_path, const char *mask, int type)
 		searchpath_t *search = NULL;
 		BDIR *dir;
 		struct Bdirent *dirent;
+		#ifdef __MORPHOS__
+		const char *d = "";
+		#else
 		const char *d = ".";
+		#endif
 		int stackdepth = CACHE1D_SOURCE_CURDIR;
 		char buf[BMAX_PATH];
 

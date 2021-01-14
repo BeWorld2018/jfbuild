@@ -7,7 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef __AMIGA__
 #define USE_IPV6
+#endif
 //#define MMULTI_DEBUG_SENDRECV
 //#define MMULTI_DEBUG_SENDRECV_WIRE
 
@@ -44,6 +46,9 @@ LPFN_WSARECVMSG WSARecvMsgPtr;
 #ifdef __GNUC__
 # define __USE_GNU
 #endif
+#ifdef __AMIGA__
+#define _POSIX_SOURCE // avoid the struct timeval redefinition
+#endif
 
 #include <unistd.h>
 #include <netinet/in.h>
@@ -52,6 +57,36 @@ LPFN_WSARECVMSG WSARecvMsgPtr;
 #include <sys/socket.h>
 #include <netdb.h>
 #define SOCKET int
+#ifdef __AMIGA__
+#include <sys/uio.h>
+#include <proto/exec.h>
+#include <proto/socket.h>
+
+struct Library *SocketBase;
+
+#define sockaddr_storage sockaddr
+#define ss_len sa_len
+#define ss_family sa_family
+
+#undef inet_ntop
+//const char *inet_ntop(int af, const void *src, char *dst, socklen_t size)
+STRPTR inet_ntop(LONG af, APTR src, STRPTR dst, LONG size)
+{
+	const char *ptr = (const char *)src;
+	sprintf(dst, "%u.%u.%u.%u", ptr[0], ptr[1], ptr[2], ptr[3]);
+	return dst;
+}
+#define ioctl(a,b,c) IoctlSocket((a),(b),(char *)(c))
+#define close CloseSocket
+#define errno Errno()
+static int GetTickCount(void)
+{
+	unsigned int getusecticks(void); // found in *layer.c
+	int ti = getusecticks() / 1000;
+	return ti;
+}
+
+#else
 
 #include <sys/time.h>
 static int GetTickCount(void)
@@ -64,6 +99,7 @@ static int GetTickCount(void)
 	ti += tv.tv_usec / 1000;
 	return ti;
 }
+#endif
 
 #define IS_INVALID_SOCKET(sock) (sock < 0)
 
@@ -106,8 +142,10 @@ static unsigned char pakmem[4194304]; static int pakmemi = 1;
 static SOCKET mysock = -1;
 static int domain = PF_UNSPEC;
 static struct sockaddr_storage otherhost[MAXPLAYERS], snatchhost;	// IPV4/6 address of peers
+#ifndef __AMIGA__
 static struct in_addr replyfrom4[MAXPLAYERS], snatchreplyfrom4;		// our IPV4 address peers expect to hear from us on
 static struct in6_addr replyfrom6[MAXPLAYERS], snatchreplyfrom6;	// our IPV6 address peers expect to hear from us on
+#endif
 static int netready = 0;
 
 static int lookuphost(const char *name, struct sockaddr *host, int warnifmany);
@@ -127,6 +165,12 @@ void netuninit ()
 #else
 	if (mysock >= 0) close(mysock);
 	mysock = -1;
+#if defined(__AROS__) || defined(__AMIGA__)
+	if (SocketBase) {
+		CloseLibrary(SocketBase);
+		SocketBase = NULL;
+	}
+#endif
 #endif
 	domain = PF_UNSPEC;
 }
@@ -142,6 +186,20 @@ int netinit (int portnum)
 
 #ifdef _WIN32
 	if (WSAStartup(0x202, &ws) != 0) return(0);
+#endif
+#if defined(__AROS__) || defined(__AMIGA__)
+	SocketBase = OpenLibrary("bsdsocket.library", 3);
+	if (!SocketBase) {
+		printf("mmulti error: Unable to open bsdsocket.library\n");
+		return 0;
+	}
+
+	/*if (SocketBaseTags(SBTM_SETVAL(SBTC_ERRNOPTR(sizeof(errno))), (IPTR)&errno, TAG_DONE)) {
+		CloseLibrary(SocketBase);
+		SocketBase = NULL;
+		printf("mmulti error: SocketBaseTags failed\n");
+		return 0;
+	}*/
 #endif
 
 #ifdef USE_IPV6
@@ -162,16 +220,20 @@ int netinit (int portnum)
 
 		mysock = socket(domain, SOCK_DGRAM, 0);
 		if (IS_INVALID_SOCKET(mysock)) {
+#ifndef __AMIGA__
 			if (domain == PF_INET6) {
 				// Retry for IPV4.
 				printf("mmulti warning: could not create IPV6 socket, trying for IPV4.\n");
 				domain = PF_INET;
 				continue;
 			} else {
+#endif
 				// No IPV4 is a total loss.
 				printf("mmulti error: could not create IPV4 socket, no multiplayer possible.\n");
 				break;
+#ifndef __AMIGA__
 			}
+#endif
 		}
 
 #ifdef _WIN32
@@ -208,6 +270,7 @@ int netinit (int portnum)
 			break;
 		}
 
+#ifndef __AMIGA__
 		// Request that we receive IPV4 packet info.
 #if defined(__linux) || defined(_WIN32)
 		if (setsockopt(mysock, IPPROTO_IP, IP_PKTINFO, (void *)&on, sizeof(on)) != 0)
@@ -222,7 +285,9 @@ int netinit (int portnum)
 				printf("mmulti warning: could not enable IPV4 packet info on socket.\n");
 			}
 		}
+#endif
 
+#ifndef __AMIGA__
 		if (domain == PF_INET6) {
 			// Allow dual-stack IPV4/IPV6 on the socket.
 			if (setsockopt(mysock, IPPROTO_IPV6, IPV6_V6ONLY, (void *)&off, sizeof(off)) != 0) {
@@ -248,6 +313,7 @@ int netinit (int portnum)
 				continue;
 			}
 		} else {
+#endif
 			struct sockaddr_in host;
 			memset(&host, 0, sizeof(host));
 			host.sin_family = AF_INET;
@@ -257,7 +323,9 @@ int netinit (int portnum)
 				// No IPV4 is a total loss.
 				break;
 			}
+#ifndef __AMIGA__
 		}
+#endif
 
 		// Complete success.
 		return 1;
@@ -316,11 +384,15 @@ int netsend (int other, void *dabuf, int bufsiz) //0:buffer full... can't send
 	iovec.iov_base = dabuf;
 	iovec.iov_len = bufsiz;
 	msg.msg_name = &otherhost[other];
+#ifndef __AMIGA__
 	if (otherhost[other].ss_family == AF_INET) {
+#endif
 		msg.msg_namelen = sizeof(struct sockaddr_in);
+#ifndef __AMIGA__
 	} else {
 		msg.msg_namelen = sizeof(struct sockaddr_in6);
 	}
+#endif
 	msg.msg_iov = &iovec;
 	msg.msg_iovlen = 1;
 	msg.msg_control = msg_control;
@@ -331,6 +403,7 @@ int netsend (int other, void *dabuf, int bufsiz) //0:buffer full... can't send
 	len = 0;
 	memset(msg_control, 0, sizeof(msg_control));
 
+#ifndef __AMIGA__
 	cmsg = CMSG_FIRSTHDR(&msg);
 #ifndef __APPLE__
 	// OS X doesn't implement setting the UDP4 source. We'll
@@ -363,6 +436,7 @@ int netsend (int other, void *dabuf, int bufsiz) //0:buffer full... can't send
 		len += CMSG_SPACE(sizeof(struct in6_pktinfo));
 		cmsg = CMSG_NXTHDR(&msg, cmsg);
 	}
+#endif
 #ifdef _WIN32
 	msg.Control.len = len;
 	if (len == 0) {
@@ -443,11 +517,13 @@ int netread (int *other, void *dabuf, int bufsiz) //0:no packets in buffer
 	if ((rand()&255) < SIMMIS) return(0);
 #endif
 
+#ifndef __AMIGA__
 	// Decode the message headers to record what of our IP addresses the
 	// packet came in on. We reply on that same address so the peer knows
 	// who it came from.
 	memset(&snatchreplyfrom4, 0, sizeof(snatchreplyfrom4));
 	memset(&snatchreplyfrom6, 0, sizeof(snatchreplyfrom6));
+
 	for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 #if defined(__linux) || defined(_WIN32)
 		if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
@@ -472,6 +548,7 @@ int netread (int *other, void *dabuf, int bufsiz) //0:no packets in buffer
 #endif
 		}
 	}
+#endif
 
 #ifdef MMULTI_DEBUG_SENDRECV_WIRE
 	{
@@ -511,6 +588,7 @@ static int issameaddress(struct sockaddr *a, struct sockaddr *b) {
 		return a4->sin_addr.s_addr == b4->sin_addr.s_addr &&
 			a4->sin_port == b4->sin_port;
 	}
+#ifndef __AMIGA__
 	if (a->sa_family == AF_INET6) {
 		// IPV6.
 		struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)a;
@@ -518,6 +596,7 @@ static int issameaddress(struct sockaddr *a, struct sockaddr *b) {
 		return IN6_ARE_ADDR_EQUAL(&a6->sin6_addr, &b6->sin6_addr) &&
 			a6->sin6_port == b6->sin6_port;
 	}
+#endif
 	return 0;
 }
 
@@ -530,12 +609,14 @@ static const char *presentaddress(struct sockaddr *a) {
 		struct sockaddr_in *s = (struct sockaddr_in *)a;
 		inet_ntop(AF_INET, &s->sin_addr, addr, sizeof(addr));
 		port = ntohs(s->sin_port);
+#ifndef __AMIGA__
 	} else if (a->sa_family == AF_INET6) {
 		struct sockaddr_in6 *s = (struct sockaddr_in6 *)a;
 		strcpy(addr, "[");
 		inet_ntop(AF_INET6, &s->sin6_addr, addr+1, sizeof(addr)-2);
 		strcat(addr, "]");
 		port = ntohs(s->sin6_port);
+#endif
 	} else {
 		return NULL;
 	}
@@ -873,8 +954,12 @@ void initmultiplayers (int argc, char const * const argv[])
 
 static int lookuphost(const char *name, struct sockaddr *host, int warnifmany)
 {
+#ifdef __AMIGA__
+	struct hostent *he;
+#else
 	struct addrinfo * result, *res;
 	struct addrinfo hints;
+#endif
 	char *wname, *portch;
 	int error, port = 0, found = 0;
 
@@ -896,6 +981,14 @@ static int lookuphost(const char *name, struct sockaddr *host, int warnifmany)
 	}
 	if (port < 1025 || port > 65534) port = NETPORT;
 
+#ifdef __AMIGA__
+	if ((he = gethostbyname(wname))) {
+		((struct sockaddr_in *)host)->sin_family = he->h_addrtype;
+		((struct sockaddr_in *)host)->sin_port = htons(port);
+		memcpy(&((struct sockaddr_in *)host)->sin_addr, he->h_addr_list[0], he->h_length);
+		found = 1;
+	}
+#else
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = AI_ADDRCONFIG;
 	hints.ai_family = domain;
@@ -927,6 +1020,7 @@ static int lookuphost(const char *name, struct sockaddr *host, int warnifmany)
 	}
 
 	freeaddrinfo(result);
+#endif
 	free(wname);
 	return found;
 }
@@ -1228,6 +1322,8 @@ void savesnatchhost(int other)
 	if (other == myconnectindex) return;
 
 	memcpy(&otherhost[other], &snatchhost, sizeof(snatchhost));
+#ifndef __AMIGA__
 	replyfrom4[other] = snatchreplyfrom4;
 	replyfrom6[other] = snatchreplyfrom6;
+#endif
 }

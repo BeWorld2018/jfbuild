@@ -43,6 +43,10 @@
 #include "osd.h"
 #include "glbuild.h"
 
+#ifdef __MORPHOS__
+unsigned long __stack = 1000000;
+#endif
+
 #if defined(__APPLE__)
 # include "osxbits.h"
 #elif defined(HAVE_GTK)
