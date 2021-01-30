@@ -4917,7 +4917,6 @@ static int loadtables(void)
         return 1;
     }
 #endif
-
 	return 0;
 }
 
@@ -7551,10 +7550,12 @@ extern char videomodereset;
 int setgamemode(char davidoption, int daxdim, int daydim, int dabpp)
 {
 	int i, j, oldbpp;
-
+	
 	if ((qsetmode == 200) && (videomodereset == 0) &&
-	    (davidoption == fullscreen) && (xdim == daxdim) && (ydim == daydim) && (bpp == dabpp))
-		return(0);
+	    (davidoption == fullscreen) && (xdim == daxdim) && (ydim == daydim) && (bpp == dabpp)) {
+			return(0);
+		}
+
 
 	strcpy(kensmessage,"!!!! BUILD engine&tools programmed by Ken Silverman of E.G. RI.  (c) Copyright 1995 Ken Silverman.  Summary:  BUILD = Ken. !!!!");
 
@@ -7562,15 +7563,18 @@ int setgamemode(char davidoption, int daxdim, int daydim, int dabpp)
 
 	//bytesperline is set in this function
 	oldbpp = bpp;
-	if (setvideomode(daxdim,daydim,dabpp,davidoption) < 0) return(-1);
+	if (setvideomode(daxdim,daydim,dabpp,davidoption) < 0) {
+		return(-1);
+	}
 	daxdim = xres; daydim = yres;	// The mode set might not be a perfect match to what we asked for.
 
 	// it's possible the previous call protected our code sections again
 	makeasmwriteable();
 
 #if USE_POLYMOST && USE_OPENGL
-	if (dabpp > 8) rendmode = 3;	// GL renderer
-	else if (dabpp == 8 && oldbpp != 8) rendmode = 0;	// going from GL to software activates classic
+	//if (dabpp > 8) 
+		rendmode = 3;	// GL renderer
+	//else if (dabpp == 8 && oldbpp != 8) rendmode = 0;	// going from GL to software activates classic
 #endif
 
 	xdim = daxdim; ydim = daydim;
@@ -7602,6 +7606,7 @@ int setgamemode(char davidoption, int daxdim, int daydim, int dabpp)
 
 	if (lookups != NULL) { kfree((void *)lookups); lookups = NULL; }
 	if ((lookups = kmalloc(j<<1)) == NULL) {
+		printf("[%s] Failed to allocate lookups memory return -1\n", __FUNCTION__);
 		engineerrstr = "Failed to allocate lookups memory";
 		return -1;
 	}
@@ -7676,9 +7681,6 @@ void nextpage(void)
 			enddrawing();	//}}}
 
 			OSD_Draw();
-#if USE_POLYMOST
-			polymost_nextpage();
-#endif
 
 			if (captureatnextpage) {
 				if (captureformat == 0) screencapture_tga(capturename,captureatnextpage&1);
@@ -7687,9 +7689,6 @@ void nextpage(void)
 			}
 
 			showframe();
-#if USE_POLYMOST && USE_OPENGL
-			polymost_aftershowframe();
-#endif
 
 			/*
 			if (ratelimit > 0) {
@@ -9605,9 +9604,11 @@ void setview(int x1, int y1, int x2, int y2)
 		{ startumost[i] = windowy1, startdmost[i] = windowy2+1; }
 	for(i=windowx2+1;i<xdim;i++) { startumost[i] = 1, startdmost[i] = 0; }
 
-#if USE_POLYMOST && USE_OPENGL
-	polymost_setview();
-#endif
+	/*
+	begindrawing();	//{{{
+	viewoffset = windowy1*bytesperline + windowx1;
+	enddrawing();	//}}}
+	*/
 }
 
 
@@ -9923,10 +9924,7 @@ void clearview(int dacol)
 					  ((float)p.g)/255.0,
 					  ((float)p.b)/255.0,
 					  0);
-		glfunc.glScissor(windowx1,yres-(windowy2+1),windowx2-windowx1+1,windowy2-windowy1+1);
-		glfunc.glEnable(GL_SCISSOR_TEST);
 		glfunc.glClear(GL_COLOR_BUFFER_BIT);
-		glfunc.glDisable(GL_SCISSOR_TEST);
 		return;
 	}
 #endif
@@ -9989,7 +9987,24 @@ void clearallviews(int dacol)
 void plotpixel(int x, int y, unsigned char col)
 {
 #if USE_POLYMOST && USE_OPENGL
-	if (!polymost_plotpixel(x,y,col)) return;
+	if (rendmode == 3 && qsetmode == 200) {
+		palette_t p;
+		if (gammabrightness) p = curpalette[col];
+		else {
+			p.r = britable[curbrightness][ curpalette[col].r ];
+			p.g = britable[curbrightness][ curpalette[col].g ];
+			p.b = britable[curbrightness][ curpalette[col].b ];
+		}
+
+		setpolymost2dview();	// JBF 20040205: more efficient setup
+
+		glfunc.glBegin(GL_POINTS);
+		 glfunc.glColor4ub(p.r,p.g,p.b,255);
+		 glfunc.glVertex2i(x,y);
+		glfunc.glEnd();
+
+		return;
+	}
 #endif
 
 	begindrawing();	//{{{
@@ -10375,6 +10390,31 @@ void drawline256(int x1, int y1, int x2, int y2, unsigned char col)
 
 	col = palookup[0][col];
 
+#if defined(POLYMOST) && defined(USE_OPENGL)
+	if (rendmode == 3)
+	{
+		palette_t p;
+		if (gammabrightness) p = curpalette[col];
+		else {
+			p.r = britable[curbrightness][ curpalette[col].r ];
+			p.g = britable[curbrightness][ curpalette[col].g ];
+			p.b = britable[curbrightness][ curpalette[col].b ];
+		}
+
+		setpolymost2dview();	// JBF 20040205: more efficient setup
+
+		//glfunc.glEnable(GL_BLEND);	// When using line antialiasing, this is needed
+		glfunc.glBegin(GL_LINES);
+			glfunc.glColor4ub(p.r,p.g,p.b,255);
+			glfunc.glVertex2f((float)x1/4096.0,(float)y1/4096.0);
+			glfunc.glVertex2f((float)x2/4096.0,(float)y2/4096.0);
+		glfunc.glEnd();
+		//glfunc.glDisable(GL_BLEND);
+
+      return;
+   }
+#endif
+
 	dx = x2-x1; dy = y2-y1;
 	if (dx >= 0)
 	{
@@ -10401,10 +10441,6 @@ void drawline256(int x1, int y1, int x2, int y2, unsigned char col)
 		if (y1 > wy2) x1 += scale(wy2-y1,dx,dy), y1 = wy2;
 	}
 
-#if USE_POLYMOST && USE_OPENGL
-	if (!polymost_drawline256(x1,y1,x2,y2,col)) return;
-#endif
-
 	if (klabs(dx) >= klabs(dy))
 	{
 		if (dx == 0) return;
@@ -10412,7 +10448,6 @@ void drawline256(int x1, int y1, int x2, int y2, unsigned char col)
 		{
 			i = x1; x1 = x2; x2 = i;
 			i = y1; y1 = y2; y2 = i;
-			x1+=4096; x2+=4096;
 		}
 
 		inc = divscale12(dy,dx);
@@ -10435,7 +10470,6 @@ void drawline256(int x1, int y1, int x2, int y2, unsigned char col)
 		{
 			i = x1; x1 = x2; x2 = i;
 			i = y1; y1 = y2; y2 = i;
-			y1+=4096; y2+=4096;
 		}
 
 		inc = divscale12(dx,dy);
@@ -11101,6 +11135,58 @@ void printext256(int xpos, int ypos, short col, short backcol, const char *name,
 
 #if USE_POLYMOST && USE_OPENGL
 	if (!polymost_printext256(xpos,ypos,col,backcol,name,fontsize)) return;
+
+	if (rendmode == 3) {
+		int xx, yy;
+		int lc=-1;
+		palette_t p,b;
+
+		if (gammabrightness) {
+			p = curpalette[col];
+			b = curpalette[backcol];
+		} else {
+			p.r = britable[curbrightness][ curpalette[col].r ];
+			p.g = britable[curbrightness][ curpalette[col].g ];
+			p.b = britable[curbrightness][ curpalette[col].b ];
+			b.r = britable[curbrightness][ curpalette[backcol].r ];
+			b.g = britable[curbrightness][ curpalette[backcol].g ];
+			b.b = britable[curbrightness][ curpalette[backcol].b ];
+		}
+
+		setpolymost2dview();
+		glfunc.glDisable(GL_ALPHA_TEST);
+		glfunc.glDepthMask(GL_FALSE);	// disable writing to the z-buffer
+
+		glfunc.glBegin(GL_POINTS);
+
+		for(i=0;name[i];i++) {
+			letptr = &fontptr[((int)(unsigned char)name[i])<<3];
+			xx = stx-fontsize;
+			yy = ypos+7 + 2; //+1 is hack!
+			for(y=7;y>=0;y--) {
+				for(x=charxsiz-1;x>=0;x--) {
+					if (letptr[y]&pow2char[7-fontsize-x]) {
+						if (lc!=col)
+							glfunc.glColor4ub(p.r,p.g,p.b,255);
+						lc = col;
+						glfunc.glVertex2i(xx+x,yy);
+					} else if (backcol >= 0) {
+						if (lc!=backcol)
+							glfunc.glColor4ub(b.r,b.g,b.b,255);
+						lc = backcol;
+						glfunc.glVertex2i(xx+x,yy);
+					}
+				}
+				yy--;
+			}
+			stx += charxsiz;
+		}
+
+		glfunc.glEnd();
+		glfunc.glDepthMask(GL_TRUE);	// re-enable writing to the z-buffer
+
+		return;
+	}
 #endif
 
 	begindrawing();	//{{{
@@ -11515,11 +11601,17 @@ void setpolymost2dview(void)
 
 	if (gloy1 != -1) {
 		glfunc.glViewport(0,0,xres,yres);
+		glfunc.glMatrixMode(GL_PROJECTION);
+		glfunc.glLoadIdentity();
+		glfunc.glOrtho(0,xres,yres,0,-1,1);
+		glfunc.glMatrixMode(GL_MODELVIEW);
+		glfunc.glLoadIdentity();
 	}
 
 	gloy1 = -1;
 
 	glfunc.glDisable(GL_DEPTH_TEST);
+	glfunc.glDisable(GL_TEXTURE_2D);
 	glfunc.glDisable(GL_BLEND);
 }
 

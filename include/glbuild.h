@@ -15,6 +15,9 @@
 #    define WIN32_LEAN_AND_MEAN
 #    include <windows.h>
 #    include <GL/gl.h>
+#  elif __MORPHOS__
+#    define _NO_PPCINLINE
+#      include <GL/gl.h>
 #  elif defined(__APPLE__)
 #    if (USE_OPENGL == USE_GL3)
 #      include <stddef.h>
@@ -73,7 +76,6 @@ struct glbuild_funcs {
     GLenum (APIENTRY * glGetError)( GLvoid );
     void (APIENTRY * glHint)( GLenum target, GLenum mode );
     void (APIENTRY * glPixelStorei)( GLenum pname, GLint param );
-    void (APIENTRY * glViewport)( GLint x, GLint y, GLsizei width, GLsizei height );
     void (APIENTRY * glScissor)( GLint x, GLint y, GLsizei width, GLsizei height );
 
     // Depth
@@ -84,6 +86,36 @@ struct glbuild_funcs {
 #else
     void (APIENTRY * glDepthRange)( GLclampd near_val, GLclampd far_val );
 #endif
+
+	void (APIENTRY * glAlphaFunc)( GLenum func, GLclampf ref );
+	void (APIENTRY * glPushAttrib)( GLbitfield mask );
+	void (APIENTRY * glPopAttrib)( void );
+	// Matrix
+	void (APIENTRY * glMatrixMode)( GLenum mode );
+	void (APIENTRY * glOrtho)( GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble near_val, GLdouble far_val );
+	void (APIENTRY * glFrustum)( GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble near_val, GLdouble far_val );
+	void (APIENTRY * glViewport)( GLint x, GLint y, GLsizei width, GLsizei height );
+	void (APIENTRY * glPushMatrix)( void );
+	void (APIENTRY * glPopMatrix)( void );
+	void (APIENTRY * glLoadIdentity)( void );
+	void (APIENTRY * glLoadMatrixf)( const GLfloat *m );
+	// Drawing
+	void (APIENTRY * glBegin)( GLenum mode );
+	void (APIENTRY * glEnd)( void );
+	void (APIENTRY * glVertex2f)( GLfloat x, GLfloat y );
+	void (APIENTRY * glVertex2i)( GLint x, GLint y );
+	void (APIENTRY * glVertex3d)( GLdouble x, GLdouble y, GLdouble z );
+	void (APIENTRY * glVertex3fv)( const GLfloat *v );
+	void (APIENTRY * glColor4f)( GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha );
+	void (APIENTRY * glColor4ub)( GLubyte red, GLubyte green, GLubyte blue, GLubyte alpha );
+	void (APIENTRY * glTexCoord2d)( GLdouble s, GLdouble t );
+	void (APIENTRY * glTexCoord2f)( GLfloat s, GLfloat t );	
+	// Fog
+	void (APIENTRY * glFogf)( GLenum pname, GLfloat param );
+	void (APIENTRY * glFogi)( GLenum pname, GLint param );
+	void (APIENTRY * glFogfv)( GLenum pname, const GLfloat *params );
+	// Lighting
+	void (APIENTRY * glShadeModel)( GLenum mode );
 
     // Raster funcs
     void (APIENTRY * glReadPixels)( GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid *pixels );
@@ -98,8 +130,10 @@ struct glbuild_funcs {
     void (APIENTRY * glTexParameterf)( GLenum target, GLenum pname, GLfloat param );
     void (APIENTRY * glTexParameteri)( GLenum target, GLenum pname, GLint param );
     void (APIENTRY * glCompressedTexImage2D)(GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const GLvoid *);
+	void (APIENTRY * glCompressedTexImage2DARB)(GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const GLvoid *);
 
     // Buffer objects
+#ifdef SHADERS
     void (APIENTRY * glBindBuffer)(GLenum target, GLuint buffer);
     void (APIENTRY * glBufferData)(GLenum target, GLsizeiptr size, const GLvoid * data, GLenum usage);
     void (APIENTRY * glBufferSubData)(GLenum target, GLintptr offset, GLsizeiptr size, const GLvoid * data);
@@ -139,13 +173,14 @@ struct glbuild_funcs {
     void (APIENTRY * glUniform4f)(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3);
     void (APIENTRY * glUniformMatrix4fv)(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
     void (APIENTRY * glUseProgram)(GLuint program);
-
+#endif
     // Debug extension.
 #if (USE_OPENGL == USE_GLES2)
     void (APIENTRY * glDebugMessageCallbackKHR)(GLBUILD_DEBUGPROC callback, const GLvoid* userParam);
 #else
     void (APIENTRY * glDebugMessageCallback)(GLBUILD_DEBUGPROC callback, const GLvoid* userParam);
 #endif
+
 };
 
 extern struct glbuild_funcs glfunc;
@@ -166,6 +201,7 @@ void glbuild_unloadfunctions(void);
 void glbuild_check_errors(const char *file, int line);
 #define GLBUILD_CHECK_ERRORS() glbuild_check_errors(__FILE__, __LINE__)
 
+#ifndef SHADERS
 GLuint glbuild_compile_shader(GLuint type, const GLchar *source);
 GLuint glbuild_link_program(int shadercount, GLuint *shaders);
 int glbuild_prepare_8bit_shader(glbuild8bit *state, int resx, int resy, int stride);        // <0 = error
@@ -173,6 +209,8 @@ void glbuild_delete_8bit_shader(glbuild8bit *state);
 void glbuild_update_8bit_palette(glbuild8bit *state, const GLvoid *pal);
 void glbuild_update_8bit_frame(glbuild8bit *state, const GLvoid *frame, int resx, int resy, int stride);
 void glbuild_draw_8bit_frame(glbuild8bit *state);
+#endif
+
 
 #endif //USE_OPENGL
 

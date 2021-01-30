@@ -37,30 +37,26 @@ extern intptr_t frameplace;
 extern void (*baselayer_onvideomodechange)(int);
 
 #if USE_OPENGL
-typedef struct {
+struct glinfo {
 	int loaded;
-
-	int majver;	// GL version
-	int minver;
-	int glslmajver;	// 0 = no support
-	int glslminver;
+	const char *vendor;
+	const char *renderer;
+	const char *version;
+	const char *extensions;
 
 	float maxanisotropy;
 	char bgra;
 	char clamptoedge;
-	char texcomprdxt1;
-	char texcomprdxt5;
-	char texcompretc1;
+	char texcompr;
 	char texnpot;
 	char multisample;
 	char nvmultisamplehint;
+	char multitex;
+	char envcombine;
 
-	int multitex;
-	int maxtexsize;
-	int maxvertexattribs;
-	char debugext;
-} baselayer_glinfo;
-extern baselayer_glinfo glinfo;
+	char hack_nofog;
+};
+extern struct glinfo glinfo;
 #endif
 
 extern int inputdevices;
@@ -157,6 +153,7 @@ int unloadgldriver(void);
 int baselayer_init(void);
 #if USE_OPENGL
 int baselayer_setupopengl(void);
+void baselayer_dumpglinfo(void);
 #endif
 
 void makeasmwriteable(void);

@@ -89,7 +89,9 @@ extern float curgamma;
 
 #if USE_OPENGL
 static SDL_GLContext sdl_glcontext;
+#ifdef SHADERS
 static glbuild8bit gl8bit;
+#endif
 static char nogl=0;
 static int glswapinterval = 1;
 
@@ -124,7 +126,7 @@ static int buildkeytranslationtable(void);
 
 static void shutdownvideo(void);
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__MORPHOS__)
 static SDL_Surface * loadappicon(void);
 #endif
 
@@ -912,9 +914,12 @@ static void shutdownvideo(void)
 		frame = NULL;
 	}
 #if USE_OPENGL
+#ifdef SHADERS
 	if (!nogl) {
 		glbuild_delete_8bit_shader(&gl8bit);
 	}
+#endif
+
 	if (sdl_glcontext) {
 #if USE_POLYMOST
 		polymost_glreset();
@@ -972,8 +977,7 @@ int setvideomode(int x, int y, int c, int fs)
 		(fs & 1) ? "fullscreen" : "windowed");
 
 	do {
-		flags = SDL_WINDOW_HIDDEN;
-
+		flags = 0;
 #if USE_OPENGL
 		if (!nogl) {
 #if (USE_OPENGL == USE_GLES2)
@@ -986,11 +990,13 @@ int setvideomode(int x, int y, int c, int fs)
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
 #else
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+#ifdef SHADERS
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 			SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 #endif
+#endif
 
-			SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+			//SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
 			SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 #if USE_POLYMOST
 			SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, glmultisample > 0);
@@ -1023,7 +1029,7 @@ int setvideomode(int x, int y, int c, int fs)
 		break;
 	} while (1);
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__MORPHOS__)
 	{
 		SDL_Surface *icon = loadappicon();
 		SDL_SetWindowIcon(sdl_window, icon);
@@ -1036,7 +1042,7 @@ int setvideomode(int x, int y, int c, int fs)
 
 		// Round up to a multiple of 4.
 		pitch = (((x|1) + 4) & ~3);
-
+/*
 #if USE_OPENGL
 		if (nogl) {
 #endif
@@ -1067,7 +1073,7 @@ int setvideomode(int x, int y, int c, int fs)
 			}
 #endif
 #if USE_OPENGL
-		} else {
+		} else {*/
 			// Prepare the GLSL shader for 8-bit blitting.
 			sdl_glcontext = SDL_GL_CreateContext(sdl_window);
 			if (!sdl_glcontext) {
@@ -1075,16 +1081,25 @@ int setvideomode(int x, int y, int c, int fs)
 				nogl = 1;
 			} else if (baselayer_setupopengl()) {
 				nogl = 1;
-			} else if (glbuild_prepare_8bit_shader(&gl8bit, x, y, pitch) < 0) {
-				nogl = 1;
+			/*} else if (glbuild_prepare_8bit_shader(&gl8bit, x, y, pitch) < 0) {
+				nogl = 1;*/
 			}
 			if (nogl) {
 				// Try again but without OpenGL.
 				buildputs("Falling back to non-OpenGL render.\n");
 				return setvideomode(x, y, c, fs);
 			}
-		}
-#endif
+
+			if (sdl_glcontext)
+			{
+				glfunc.glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+				glfunc.glMatrixMode(GL_PROJECTION);
+				glfunc.glLoadIdentity();
+				glfunc.glMatrixMode(GL_MODELVIEW);
+				glfunc.glLoadIdentity();
+			}
+		//}
+//#endif
 
 		frame = (unsigned char *) malloc(pitch * y);
 		if (!frame) {
@@ -1128,7 +1143,7 @@ int setvideomode(int x, int y, int c, int fs)
 #endif
 	}
 
-	SDL_ShowWindow(sdl_window);
+	//SDL_ShowWindow(sdl_window);
 
 	xres = x;
 	yres = y;
@@ -1193,22 +1208,42 @@ void enddrawing(void)
 void showframe(void)
 {
 	int i,j;
-
+//	if (bpp > 8) {
 #if USE_OPENGL
-	if (!nogl) {
-		if (bpp == 8) {
-			glbuild_update_8bit_frame(&gl8bit, frame, xres, yres, bytesperline);
-			glbuild_draw_8bit_frame(&gl8bit);
+		if (palfadedelta) {
+			glfunc.glMatrixMode(GL_PROJECTION);
+			glfunc.glPushMatrix();
+			glfunc.glLoadIdentity();
+			glfunc.glMatrixMode(GL_MODELVIEW);
+			glfunc.glPushMatrix();
+			glfunc.glLoadIdentity();
+
+			glfunc.glDisable(GL_DEPTH_TEST);
+			glfunc.glDisable(GL_ALPHA_TEST);
+			glfunc.glDisable(GL_TEXTURE_2D);
+
+			glfunc.glEnable(GL_BLEND);
+			glfunc.glColor4ub(palfadergb.r, palfadergb.g, palfadergb.b, palfadedelta);
+
+			glfunc.glBegin(GL_QUADS);
+			glfunc.glVertex2i(-1, -1);
+			glfunc.glVertex2i(1, -1);
+			glfunc.glVertex2i(1, 1);
+			glfunc.glVertex2i(-1, 1);
+			glfunc.glEnd();
+
+			glfunc.glMatrixMode(GL_MODELVIEW);
+			glfunc.glPopMatrix();
+			glfunc.glMatrixMode(GL_PROJECTION);
+			glfunc.glPopMatrix();
 		}
 
-		SDL_GL_SwapWindow(sdl_window);
+        SDL_GL_SwapWindow(sdl_window);
 		return;
-	}
 #endif
-
+/*	}else{
 	unsigned char *pixels, *in;
 	int pitch, y, x;
-
 #ifdef SDLAYER_USE_RENDERER
 	if (SDL_LockTexture(sdl_texture, NULL, (void**)&pixels, &pitch)) {
 		debugprintf("Could not lock texture: %s\n", SDL_GetError());
@@ -1219,13 +1254,6 @@ void showframe(void)
 	for (y = yres - 1; y >= 0; y--) {
 		for (x = xres - 1; x >= 0; x--) {
 #if B_LITTLE_ENDIAN
-			// RGBA -> BGRA, ignoring A
-			/*
-			pixels[(x<<2)+0] = curpalettefaded[in[x]].b;
-			pixels[(x<<2)+1] = curpalettefaded[in[x]].g;
-			pixels[(x<<2)+2] = curpalettefaded[in[x]].r;
-			pixels[(x<<2)+3] = 0;
-			*/
 			((unsigned int *)pixels)[x] = B_SWAP32(*(unsigned int *)&curpalettefaded[in[x]]) >> 8;
 #else
 			pixels[(x<<2)+0] = 0;
@@ -1271,6 +1299,7 @@ void showframe(void)
 	SDL_BlitSurface(sdl_surface, NULL, winsurface, NULL);
 	SDL_UpdateWindowSurface(sdl_window);
 #endif //SDLAYER_USE_RENDERER
+	}*/
 }
 
 
@@ -1280,9 +1309,11 @@ void showframe(void)
 int setpalette(int UNUSED(start), int UNUSED(num), unsigned char * UNUSED(dapal))
 {
 #if USE_OPENGL
-	if (!nogl) {
+#ifdef SHADERS
+	if (gl8bitpaltex) {
 		glbuild_update_8bit_palette(&gl8bit, curpalettefaded);
 	}
+#endif
 #endif
 #ifndef SDLAYER_USE_RENDERER
 	if (sdl_surface) {
@@ -1318,8 +1349,11 @@ int loadgldriver(const char *soname)
 	}
 
 	buildprintf("Loading %s\n", name);
-	if (SDL_GL_LoadLibrary(soname)) return -1;
-	return 0;
+	if (SDL_GL_LoadLibrary(soname)) {
+		return -1;
+	}else {
+		return 0;
+	}
 }
 
 int unloadgldriver(void)
@@ -1338,7 +1372,7 @@ void *getglprocaddress(const char *name, int UNUSED(ext))
 #endif
 
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__MORPHOS__)
 extern struct sdlappicon sdlappicon;
 static SDL_Surface * loadappicon(void)
 {

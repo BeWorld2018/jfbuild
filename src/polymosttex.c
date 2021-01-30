@@ -97,7 +97,8 @@ static inline int ptm_gethashhead(const unsigned int idcrc)
 static void detect_texture_size()
 {
 	if (gltexmaxsize <= 0) {
-		GLint siz = glinfo.maxtexsize;
+		GLint siz = 0;
+		glfunc.glGetIntegerv(GL_MAX_TEXTURE_SIZE, &siz);
 		if (siz == 0) {
 			gltexmaxsize = 6;   // 2^6 = 64 == default GL max texture size
 		} else {
@@ -208,38 +209,7 @@ static int ptm_loadcachedtexturefile(const char* filename, PTMHead* ptmh, int fl
 	if (!tdef) {
 		return -1;
 	}
-
-	switch (tdef->format) {
-#if GL_EXT_texture_compression_dxt1 || GL_EXT_texture_compression_s3tc
-		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-			compress = PTCOMPRESS_DXT1;
-			if (!glinfo.texcomprdxt1) goto incompatible;
-			break;
-#endif
-#if GL_EXT_texture_compression_s3tc
-		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
-			compress = PTCOMPRESS_DXT5;
-			if (!glinfo.texcomprdxt5) goto incompatible;
-			break;
-#endif
-#if GL_OES_compressed_ETC1_RGB8_texture
-		case GL_ETC1_RGB8_OES:
-			compress = PTCOMPRESS_ETC1;
-			if (!glinfo.texcompretc1) goto incompatible;
-			break;
-#endif
-		default:
-incompatible:
-			if (polymosttexverbosity >= 2) {
-				buildprintf("PolymostTex: cached %s (effects %d, flags %d) has incompatible format %s (0x%x)\n",
-						   tdef->filename, tdef->effects, tdef->flags,
-						   compress ? compressfourcc[compress] : "?",
-						   tdef->format);
-			}
-			PTCacheFreeTile(tdef);
-			return -1;
-	}
-
+	
 	if (polymosttexverbosity >= 2) {
 		buildprintf("PolymostTex: loaded %s (effects %d, flags %d, %s) from cache\n",
 				   tdef->filename, tdef->effects, tdef->flags, compressfourcc[compress]);
@@ -299,8 +269,8 @@ int PTM_LoadTextureFile(const char* filename, PTMHead* ptmh, int flags, int effe
 	char * picdata = 0;
 	PTCacheTile * tdef = 0;
 	int writetocache = 0, iscached = 0;
-
-	if (!(flags & PTH_NOCOMPRESS) && glusetexcache && glusetexcompr) {
+	
+	if (!(flags & PTH_NOCOMPRESS) && glinfo.texcompr && glusetexcache && glusetexcompr) {
 		iscached = PTCacheHasTile(filename, effects, (flags & PTH_CLAMPED));
 
 		// if the texture exists in the cache but the original file is newer,
@@ -388,7 +358,8 @@ int PTM_LoadTextureFile(const char* filename, PTMHead* ptmh, int flags, int effe
 	}
 
 	tex.rawfmt = GL_BGRA;
-	if (!glinfo.bgra) {
+	if (!glinfo.bgra || glusetexcompr) {
+		// texture compression requires rgba ordering for libsquish
 		int j;
 		for (j = tex.sizx * tex.sizy - 1; j >= 0; j--) {
 			swapchar(&tex.pic[j].r, &tex.pic[j].b);
@@ -1122,32 +1093,16 @@ static void ptm_uploadtexture(PTMHead * ptm, unsigned short flags, PTTexture * t
 	int starttime;
 
 	detect_texture_size();
-
-#if USE_OPENGL == USE_GLES2
-	// GLES permits BGRA as an internal format.
-    intexfmt = tex->rawfmt;
-#else
-    intexfmt = GL_RGBA;
-#endif
-	if (!(flags & PTH_NOCOMPRESS) && glusetexcompr) {
-#if GL_EXT_texture_compression_dxt1 || GL_EXT_texture_compression_s3tc
-		if (!compress && !tex->hasalpha && glinfo.texcomprdxt1) {
-			intexfmt = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-			compress = PTCOMPRESS_DXT1;
-		}
-#endif
-#if GL_OES_compressed_ETC1_RGB8_texture
-		if (!compress && !tex->hasalpha && glinfo.texcompretc1) {
-			intexfmt = GL_ETC1_RGB8_OES;
-			compress = PTCOMPRESS_ETC1;
-		}
-#endif
-#if GL_EXT_texture_compression_s3tc
-		if (!compress && tex->hasalpha && glinfo.texcomprdxt5) {
-			intexfmt = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-			compress = PTCOMPRESS_DXT5;
-		}
-#endif
+	
+	if (!(flags & PTH_NOCOMPRESS) && glinfo.texcompr && glusetexcompr) {
+		intexfmt = tex->hasalpha
+		         ? GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+		         : GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+		compress = 1;
+	} else {
+		intexfmt = tex->hasalpha
+		         ? GL_RGBA
+		         : GL_RGB;
 	}
 
 	if (compress && tdef) {

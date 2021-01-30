@@ -74,6 +74,7 @@ int glbuild_loadfunctions(void)
 	INIT_PROC_SOFT(glCompressedTexImage2D);
 
 	// Buffer objects
+#ifdef SHADERS	
 	INIT_PROC(glBindBuffer);
 	INIT_PROC(glBufferData);
 	INIT_PROC(glBufferSubData);
@@ -88,7 +89,39 @@ int glbuild_loadfunctions(void)
     INIT_PROC(glDeleteVertexArrays);
     INIT_PROC(glGenVertexArrays);
 #endif
+#endif
 
+#ifndef SHADERS
+	INIT_PROC(glAlphaFunc);
+	INIT_PROC(glPushAttrib);
+	INIT_PROC(glPopAttrib);
+	// Matrix
+	INIT_PROC(glMatrixMode);
+	INIT_PROC(glOrtho);
+	INIT_PROC(glFrustum);
+	INIT_PROC(glViewport);
+	INIT_PROC(glPushMatrix);
+	INIT_PROC(glPopMatrix);
+	INIT_PROC(glLoadIdentity);
+	INIT_PROC(glLoadMatrixf);
+	// Drawing
+	INIT_PROC(glBegin);
+	INIT_PROC(glEnd);
+	INIT_PROC(glVertex2f);
+	INIT_PROC(glVertex2i);
+	INIT_PROC(glVertex3d);
+	INIT_PROC(glVertex3fv);
+	INIT_PROC(glColor4f);
+	INIT_PROC(glColor4ub);
+	INIT_PROC(glTexCoord2d);
+	INIT_PROC(glTexCoord2f);	
+	// Fog
+	INIT_PROC(glFogf);
+	INIT_PROC(glFogi);
+	INIT_PROC(glFogfv);
+	// Lighting
+	INIT_PROC(glShadeModel);
+#else	
 	// Shaders
 	INIT_PROC(glActiveTexture);
 	INIT_PROC(glAttachShader);
@@ -113,6 +146,7 @@ int glbuild_loadfunctions(void)
 	INIT_PROC(glUniform3f);
 	INIT_PROC(glUniform4f);
 	INIT_PROC(glUniformMatrix4fv);
+#endif
 
 #if (USE_OPENGL == USE_GLES2)
     INIT_PROC_SOFT(glDebugMessageCallbackKHR);
@@ -186,6 +220,7 @@ static GLchar *glbuild_cook_source(const GLchar *source, const char *spec)
 	return cooked;
 }
 
+#ifdef SHADERS
 GLuint glbuild_compile_shader(GLuint type, const GLchar *source)
 {
 	GLuint shader;
@@ -463,4 +498,5 @@ void glbuild_draw_8bit_frame(glbuild8bit *state)
 	glfunc.glDrawElements(GL_TRIANGLE_FAN, 6, GL_UNSIGNED_SHORT, 0);
 }
 
+#endif
 #endif  //USE_OPENGL
